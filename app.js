@@ -66,7 +66,239 @@ const UI = {
   btnRunBatch: $("btnRunBatch"),
   btnExportBatch: $("btnExportBatch"),
   batchLog: $("batchLog"),
+// Groupage multi-carico (solo GROUPAGE)
+cargoBox: $("#cargoBox"),
+cargoAdd: $("#cargoAdd"),
+cargoClear: $("#cargoClear"),
+cargoBase: $("#cargoBase"),
+cargoList: $("#cargoList"),
+cargoHint: $("#cargoHint"),
+
 };
+
+/* ---------------------------
+   GROUPAGE multi-carico (Base + Stack)
+   - Se il carico contiene almeno 2 articoli, calcoliamo LM/quintali/plt dai dati del carico.
+   - Logica LM: baseLM + somma LM dei NON-stackabili (esclusa base). Gli stackabili non aumentano LM.
+   - Se non selezioni la Base, usa automaticamente l’articolo con LM maggiore come base.
+--------------------------- */
+const cargoState = {
+  items: [], // {id, qty, stackable, lm, quintali, pallets, label}
+  baseId: null
+};
+
+function parseNum(v, def=0){
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : def;
+}
+
+function getSelectedArticle(){
+  const id = UI.article?.value || "";
+  return (id && DATA.articlesById) ? DATA.articlesById.get(id) : null;
+}
+
+function inferItemMetricsFromUI(art){
+  const lm = parseNum(art?.rules?.lm ?? art?.rules?.groupageLm ?? UI.lm?.value, 0);
+  const ql = parseNum(art?.rules?.quintali ?? art?.rules?.groupageQuintali ?? UI.quintali?.value, 0);
+  const plt = parseNum(art?.rules?.palletCount ?? art?.rules?.groupagePallets ?? UI.palletCount?.value, 0);
+  return { lm, quintali: ql, pallets: plt };
+}
+
+function ensureCargoVisible(){
+  if(!UI.cargoBox) return;
+  const isGroupage = (UI.service?.value === "GROUPAGE");
+  UI.cargoBox.style.display = isGroupage ? "" : "none";
+}
+
+function cargoRebuildBaseOptions(){
+  if(!UI.cargoBase) return;
+  const prev = cargoState.baseId;
+  UI.cargoBase.innerHTML = "";
+  const opt0 = document.createElement("option");
+  opt0.value = "";
+  opt0.textContent = "—";
+  UI.cargoBase.appendChild(opt0);
+
+  for(const it of cargoState.items){
+    const o = document.createElement("option");
+    o.value = it.id;
+    o.textContent = it.label;
+    UI.cargoBase.appendChild(o);
+  }
+  if(prev && cargoState.items.some(x => x.id === prev)){
+    UI.cargoBase.value = prev;
+  } else {
+    UI.cargoBase.value = "";
+    cargoState.baseId = null;
+  }
+}
+
+function cargoRender(){
+  if(!UI.cargoList) return;
+
+  UI.cargoList.innerHTML = "";
+  if(!cargoState.items.length){
+    if(UI.cargoHint) UI.cargoHint.textContent = "Nessun articolo nel carico. (Solo GROUPAGE: puoi aggiungere più articoli.)";
+    return;
+  }
+  if(UI.cargoHint) UI.cargoHint.textContent = "Suggerimento: scegli come Base il macchinario più lungo. Metti stackabile su ciò che “sale sopra”.";
+
+  for(const it of cargoState.items){
+    const row = document.createElement("div");
+    row.className = "cargo-row";
+
+    const left = document.createElement("div");
+    left.className = "cargo-left";
+    left.textContent = it.label;
+
+    const ctr = document.createElement("div");
+    ctr.className = "cargo-ctrl";
+
+    const qty = document.createElement("input");
+    qty.type = "number";
+    qty.min = "1";
+    qty.step = "1";
+    qty.value = String(it.qty);
+    qty.className = "cargo-qty";
+    qty.addEventListener("change", () => {
+      it.qty = Math.max(1, Math.floor(parseNum(qty.value, 1)));
+      cargoUpdateTotalsToUI();
+    });
+
+    const st = document.createElement("label");
+    st.className = "cargo-stack";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!it.stackable;
+    cb.addEventListener("change", () => {
+      it.stackable = cb.checked;
+      cargoUpdateTotalsToUI();
+    });
+    const sp = document.createElement("span");
+    sp.textContent = "stackabile";
+    st.appendChild(cb);
+    st.appendChild(sp);
+
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "btn small";
+    rm.textContent = "Rimuovi";
+    rm.addEventListener("click", () => {
+      cargoState.items = cargoState.items.filter(x => x !== it);
+      if(cargoState.baseId === it.id) cargoState.baseId = null;
+      cargoRebuildBaseOptions();
+      cargoRender();
+      cargoUpdateTotalsToUI();
+    });
+
+    ctr.appendChild(qty);
+    ctr.appendChild(st);
+    ctr.appendChild(rm);
+
+    row.appendChild(left);
+    row.appendChild(ctr);
+    UI.cargoList.appendChild(row);
+  }
+}
+
+function cargoAutoPickBaseId(){
+  if(cargoState.baseId && cargoState.items.some(x => x.id === cargoState.baseId)) return cargoState.baseId;
+  if(!cargoState.items.length) return null;
+  let best = cargoState.items[0];
+  for(const it of cargoState.items){
+    if((it.lm ?? 0) > (best.lm ?? 0)) best = it;
+  }
+  return best.id;
+}
+
+function cargoComputeTotals(){
+  if(!cargoState.items.length){
+    return {
+      hasCargo: false,
+      lm: parseNum(UI.lm?.value, 0),
+      quintali: parseNum(UI.quintali?.value, 0),
+      palletCount: parseNum(UI.palletCount?.value, 0)
+    };
+  }
+
+  const baseId = cargoAutoPickBaseId();
+  const base = cargoState.items.find(x => x.id === baseId) || null;
+
+  let lmBase = 0;
+  let lmNonStack = 0;
+  let qTot = 0;
+  let pTot = 0;
+
+  for(const it of cargoState.items){
+    const q = Math.max(1, it.qty|0);
+    const lm = (it.lm ?? 0) * q;
+    const ql = (it.quintali ?? 0) * q;
+    const pl = (it.pallets ?? 0) * q;
+
+    qTot += ql;
+    pTot += pl;
+
+    if(base && it.id === base.id){
+      lmBase += lm;
+    } else {
+      if(!it.stackable) lmNonStack += lm;
+    }
+  }
+
+  const lmTot = Math.max(0, lmBase + lmNonStack);
+
+  return { hasCargo: true, lm: lmTot, quintali: qTot, palletCount: pTot, baseId };
+}
+
+function cargoUpdateTotalsToUI(){
+  if(UI.service?.value !== "GROUPAGE") return;
+  const t = cargoComputeTotals();
+  if(UI.lm) UI.lm.value = String((t.lm ?? 0).toFixed(2)).replace(".", ",");
+  if(UI.quintali) UI.quintali.value = String((t.quintali ?? 0).toFixed(2)).replace(".", ",");
+  if(UI.palletCount) UI.palletCount.value = String((t.palletCount ?? 0).toFixed(0));
+}
+
+function cargoClearAll(){
+  cargoState.items = [];
+  cargoState.baseId = null;
+  cargoRebuildBaseOptions();
+  cargoRender();
+}
+
+function cargoAddSelected(){
+  const art = getSelectedArticle();
+  if(!art) return;
+  const {lm, quintali, pallets} = inferItemMetricsFromUI(art);
+  const qty = Math.max(1, Math.floor(parseNum(UI.qty?.value, 1)));
+
+  const existing = cargoState.items.find(x => x.id === art.id);
+  if(existing){
+    existing.qty += qty;
+  } else {
+    cargoState.items.push({
+      id: art.id,
+      qty,
+      stackable: true,
+      lm, quintali, pallets,
+      label: `${(art.brand||"").trim()} ${art.name||""}`.trim()
+    });
+  }
+
+  cargoRebuildBaseOptions();
+  cargoRender();
+  cargoUpdateTotalsToUI();
+}
+
+function wireCargoUI(){
+  if(UI.cargoAdd) UI.cargoAdd.addEventListener("click", cargoAddSelected);
+  if(UI.cargoClear) UI.cargoClear.addEventListener("click", cargoClearAll);
+  if(UI.cargoBase){
+    UI.cargoBase.addEventListener("change", () => {
+      cargoState.baseId = UI.cargoBase.value || null;
+      cargoUpdateTotalsToUI();
+    });
+  }
+}
 
 const MEM = {
   generatedArticlesJSON: null,

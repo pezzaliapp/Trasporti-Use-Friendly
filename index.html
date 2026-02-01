@@ -132,6 +132,30 @@
           <input id="palletCount" type="number" min="0" step="1" value="0" inputmode="numeric">
         </label>
 
+
+<!-- Carico Groupage (multi-articolo) -->
+<div class="cargo-box" id="cargoBox" style="display:none;">
+  <div class="cargo-head">
+    <div class="cargo-title">Carico Groupage</div>
+    <div class="cargo-actions">
+      <button class="btn" id="cargoAdd" type="button">Aggiungi articolo</button>
+      <button class="btn secondary" id="cargoClear" type="button">Svuota</button>
+    </div>
+  </div>
+
+  <div class="cargo-base">
+    <label class="field">
+      <span>Base (pianale)</span>
+      <select id="cargoBase">
+        <option value="">—</option>
+      </select>
+    </label>
+    <div class="cargo-meta" id="cargoHint">Nessun articolo nel carico. (Solo GROUPAGE: puoi aggiungere più articoli.)</div>
+  </div>
+
+  <div class="cargo-list" id="cargoList"></div>
+</div>
+
         <!-- KM + DISAGIATA -->
         <label class="field">
           <span>Distanza oltre capoluogo (km)</span>
@@ -238,10 +262,32 @@
 
       <div class="result">
         <div class="price">
-          <div class="label">Costo trasporto stimato</div>
+          <div class="label">Costo stimato</div>
           <div class="value" id="outCost">—</div>
-          <div class="hint" id="outCostHint" style="margin-top:6px; opacity:.85;">Importo indicativo. Per carichi fuori standard può essere necessaria quotazione.</div>
-        </div><div class="meta">
+        </div>
+
+        <div class="price">
+          <div class="label">Modalità</div>
+          <select id="markupMode" style="width:100%; margin-top:6px;">
+            <option value="RICARICO">Ricarico %</option>
+            <option value="MARGINE">Margine %</option>
+          </select>
+
+          <div class="label" style="margin-top:10px;">Valore %</div>
+          <input id="markupPct" type="number" min="0" step="0.1" value="0" style="width:100%; margin-top:6px;" inputmode="decimal">
+
+          <div class="hint" style="margin-top:6px;">
+            Ricarico%: <span style="opacity:.85;">Prezzo = Costo × (1 + %)</span><br>
+            Margine%: <span style="opacity:.85;">Prezzo = Costo ÷ (1 − %)</span>
+          </div>
+        </div>
+
+        <div class="price">
+          <div class="label">Prezzo cliente</div>
+          <div class="value" id="outClientPrice">—</div>
+        </div>
+
+        <div class="meta">
           <div class="label">Riepilogo</div>
           <pre id="outText">Carica dati…</pre>
         </div>
