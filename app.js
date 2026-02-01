@@ -370,18 +370,16 @@ function moneyEUR(v){
 // --- Prezzo cliente (Ricarico/Margine) ---
 let LAST_COST = null;
 
-function computeClientPrice(baseCost){
-  const c = Number(baseCost||0);
-  if(!isFinite(c) || c<=0) return 0;
-  // Round to 2 decimals for display
-  return Math.round((c * CLIENT_MULT) * 100) / 100;
+function computeClientPrice(cost){
+  // Fixed client price: internal cost * 1.30
+  return round2((Number(cost)||0) * CLIENT_MARKUP);
 }
 
-function updateClientPriceDisplay(){
-  // kept for backward compatibility; client UI does not expose markup controls
-  if(!ui || !ui.outClientPrice) return;
-  const p = computeClientPrice(LAST_COST);
-  ui.outClientPrice.textContent = p ? moneyEUR(p) : "—";
+function updateClientPriceDisplay(cost){
+  const client = computeClientPrice(cost);
+  if (UI.outClientPrice) UI.outClientPrice.textContent = fmtEUR(client);
+  // In client version we show only the client total as main output
+  if (UI.outCost) UI.outCost.textContent = fmtEUR(client);
 }
 
 /* -------------------- SHARE (WhatsApp + TXT) -------------------- */
@@ -1093,8 +1091,8 @@ function findArticleByCode(code){
 function onCalc(){
   const service = UI.service.value;
 
-  const region = normalizeRegion(UI.region.value);
-  const province = normalizeProvince(UI.province.value);
+  const region = normalizeRegion(UI.region.value || UI.region.options?.[UI.region.selectedIndex]?.textContent || "");
+  const province = normalizeProvince(UI.province.value || UI.province.options?.[UI.province.selectedIndex]?.textContent || "");
 
   const qty = Math.max(1, parseInt(UI.qty.value || "1", 10));
   const palletType = (UI.palletType.value || "").trim();
@@ -1183,7 +1181,7 @@ function onCalc(){
     }
   }
 
-  UI.dbgArticle.textContent = art ? JSON.stringify({id:art.id, code:art.code, pack:art.pack || {}, rules: art.rules || {}}, null, 0) : "—";
+  if (UI.dbgArticle) UI.dbgArticle.textContent = art ? JSON.stringify({id:art.id, code:art.code, pack:art.pack || {}, rules: art.rules || {}}, null, 0) : "—";
 
   let out;
   if(__svc === "PALLET"){
@@ -1222,7 +1220,7 @@ function onCalc(){
   // Abilita share solo se esiste un report client-ready valido
   enableShareButtons(!!(__clientPrice && buildClientReadyReport()));
 
-  UI.dbgRules.textContent = (out.rules || []).join(", ") || "—";
+  if (UI.dbgRules) UI.dbgRules.textContent = (out.rules || []).join(", ") || "—";
 
   UI.btnCopy.disabled = !summary;
   UI.btnCopy.dataset.copy = summary;
@@ -1366,7 +1364,7 @@ async function init(){
 
   applyServiceUI();
   UI.outText.textContent = "Pronto. Seleziona servizio, destinazione e articolo, poi Calcola.";
-  UI.dbgData.textContent = `articoli=${DB.articles.length} | regioni=${regions.length} | province=${(allProvincesFallback||[]).length}`;
+  if (UI.dbgData) UI.dbgData.textContent = `articoli=${DB.articles.length} | regioni=${regions.length} | province=${(allProvincesFallback||[]).length}`;
 }
 
 window.addEventListener("DOMContentLoaded", init);

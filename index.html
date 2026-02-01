@@ -46,6 +46,22 @@
           y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
       })(window, document, "clarity", "script", "v8o4vl5wxo");
   </script>
+
+  <style>
+    .share-actions{display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;}
+    .share-actions .sharebtn{
+      border:0;
+      padding:10px 14px;
+      border-radius:12px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .share-actions .sharebtn:disabled{opacity:.45; cursor:not-allowed;}
+    .share-actions .btn-native{background:#b28cff; color:#111;}
+    .share-actions .btn-wa{background:#25D366; color:#111;}
+    .share-actions .btn-txt{background:#4da3ff; color:#111;}
+  </style>
+
 </head>
 <body>
   <header class="topbar">
@@ -241,11 +257,22 @@
           <div class="label">Totale stimato</div>
           <div class="value" id="outCost">—</div>
         </div>
-        </div>
+
+        <!-- pricing controls hidden in client version -->
+<div class="price" style="display:none;">
+  <div class="price">
+</div>
+
 
         <div class="meta">
           <div class="label">Riepilogo</div>
           <pre id="outText">Carica dati…</pre>
+
+          <div class="share-actions">
+            <button id="btnShare" class="sharebtn btn-native" disabled>Condividi</button>
+            <button id="btnShareWA" class="sharebtn btn-wa" disabled>WhatsApp</button>
+            <button id="btnExportTxt" class="sharebtn btn-txt" disabled>TXT</button>
+          </div>
         </div>
       </div>
 
@@ -253,7 +280,7 @@
     </section>
 
     <!-- DIAGNOSTICA -->
-    <section class="card" id="sec-debug">
+    <section class="card" id="sec-debug" style="display:none;">
       <h2>Diagnostica</h2>
       <div class="small">
         <div><b>Articolo:</b> <span id="dbgArticle">—</span></div>
@@ -264,8 +291,11 @@
   </main>
 
   <footer class="foot">
-    <span>PezzaliAPP style — PWA offline-first</span>
-  </footer>
+  <span>PezzaliAPP style — PWA offline-first</span><br>
+  <small>
+    © Alessandro Pezzali – Proprietary software. Authorized use only.
+  </small>
+</footer>
 
   <script>
     // Collassa Batch di default su mobile + testo toggle
