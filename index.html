@@ -64,7 +64,7 @@
       <nav class="quicknav" aria-label="Sezioni">
         <a class="qbtn" href="#sec-dati">Dati</a>
         <a class="qbtn" href="#sec-risultato">Risultato</a>
-        
+        <a class="qbtn" href="#sec-batch">Batch</a>
       </nav>
     </div>
   </header>
@@ -167,37 +167,123 @@
       </div>
     </section>
 
+    <!-- BATCH / CONVERTITORI (collassabile su mobile) -->
+    <section class="card" id="sec-batch">
+      <div class="section-head">
+        <h2>Batch / Convertitori</h2>
+
+        <!-- Toggle solo UI (non tocca logica) -->
+        <label class="batch-toggle" for="toggleBatch" title="Mostra/Nascondi Batch">
+          <span class="batch-toggle-label">Apri</span>
+        </label>
+      </div>
+
+      <input type="checkbox" id="toggleBatch" class="toggleBatch" />
+
+      <div class="batch-body" id="batchBody">
+        <div class="grid">
+          <label class="field">
+            <span>Import CSV articoli → genera articles.json</span>
+            <input id="fileArticlesCsv" type="file" accept=".csv,text/csv" />
+            <div class="hint">Usa il template: <code>data/template_articles.csv</code></div>
+          </label>
+
+          <label class="field">
+            <span>Import CSV Regioni→Province → genera geo_provinces.json</span>
+            <input id="fileGeoCsv" type="file" accept=".csv,text/csv" />
+            <div class="hint">Formato: <code>region,province</code> (una riga per provincia)</div>
+          </label>
+
+          <label class="field">
+            <span>Import CSV offerta (righe) → calcola trasporto batch</span>
+            <input id="fileOfferCsv" type="file" accept=".csv,text/csv" />
+            <div class="hint">
+              Colonne minime consigliate:
+              <code>code,qty,service,region,province,palletType,lm,quintali,palletCount,kmOver,disagiata</code>
+              <br>
+              service ammessi: <code>PALLET</code> oppure <code>GROUPAGE</code>.
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Output</span>
+            <div class="checks">
+              <label><input type="checkbox" id="batchPickCheapest" checked>
+                Se service vuoto → scegli costo min (PALLET vs GROUPAGE)
+              </label>
+              <label><input type="checkbox" id="batchUseArticlePallet" checked>
+                Se palletType vuoto → usa quello dell’articolo
+              </label>
+            </div>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="btnExportArticles" class="secondary" disabled>Scarica articles.json</button>
+          <button id="btnExportGeo" class="secondary" disabled>Scarica geo_provinces.json</button>
+          <button id="btnRunBatch" disabled>Calcola batch</button>
+          <button id="btnExportBatch" class="secondary" disabled>Scarica batch_result.csv</button>
+        </div>
+
+        <div class="meta" style="margin-top:12px;">
+          <div class="label">Log batch</div>
+          <pre id="batchLog">—</pre>
+        </div>
+      </div>
+    </section>
+
     <!-- RISULTATO -->
     <section class="card" id="sec-risultato">
       <h2>Risultato</h2>
 
       <div class="result">
-        <!-- costo base interno (nascosto) -->
         <div class="price">
-            <div class="label">Costo trasporto (indicativo)</div>
-            <div id="outCost" class="big">—</div>
-          </div>
+          <div class="label">Totale stimato</div>
+          <div class="value" id="outCost">—</div>
+        </div>
+        </div>
 
         <div class="meta">
           <div class="label">Riepilogo</div>
           <pre id="outText">Carica dati…</pre>
-
-          <div class="share-actions">
-            <button id="btnShare" class="secondary btn-share" disabled>Condividi</button>
-            <button id="btnShareWA" class="secondary btn-wa" disabled>WhatsApp</button>
-            <button id="btnExportTxt" class="secondary btn-txt" disabled>TXT</button>
-          </div>
         </div>
       </div>
 
       <div class="alerts" id="outAlerts"></div>
+    </section>
+
+    <!-- DIAGNOSTICA -->
+    <section class="card" id="sec-debug">
+      <h2>Diagnostica</h2>
+      <div class="small">
+        <div><b>Articolo:</b> <span id="dbgArticle">—</span></div>
+        <div><b>Regole:</b> <span id="dbgRules">—</span></div>
+        <div><b>Dataset:</b> <span id="dbgData">—</span></div>
+      </div>
     </section>
   </main>
 
   <footer class="foot">
     <span>PezzaliAPP style — PWA offline-first</span>
   </footer>
-<script>
+
+  <script>
+    // Collassa Batch di default su mobile + testo toggle
+    (function(){
+      const t = document.getElementById("toggleBatch");
+      const lbl = document.querySelector(".batch-toggle-label");
+      if(!t || !lbl) return;
+
+      if (window.__PWA_IS_MOBILE__) t.checked = false;
+      else t.checked = true;
+
+      const sync = () => { lbl.textContent = t.checked ? "Chiudi" : "Apri"; };
+      t.addEventListener("change", sync);
+      sync();
+    })();
+  </script>
+
+  <script>
     // Auto-update PWA: forza check update + reload quando il nuovo SW prende controllo (robusto, anti-race)
     (function () {
       if (!("serviceWorker" in navigator)) return;
