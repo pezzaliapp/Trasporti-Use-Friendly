@@ -1,7 +1,3 @@
-const DATA_VERSION = "uf-2026-02-01";
-const USE_FRIENDLY_FIXED_MARKUP_PCT = 30; // always apply 30% markup to show client price
-const SHOW_INTERNAL_COST = false; // hide company cost in UI/reports
-
 /* Trasporti PWA — logica base + Batch/Convertitori + GEO + km/disagiata
    - Carica JSON (articoli + tariffe + geo province)
    - Calcolo: PALLET / GROUPAGE  (GLS disabilitato se non configurato)
@@ -374,110 +370,72 @@ function moneyEUR(v){
 // --- Prezzo cliente (Ricarico/Margine) ---
 let LAST_COST = null;
 
-function computeClientPrice(cost, mode, pct){
-  if(cost == null || !Number.isFinite(cost)) return null;
-  if(!Number.isFinite(pct)) return null;
-  const p = pct/100;
-  const m = String(mode||'').toUpperCase();
-  if(m === 'RICARICO'){
-    return cost * (1 + p);
+
+// Prezzo cliente: markup fisso (non modificabile dall'utente)
+function clientPriceFromBase(baseCost){
+  const n = Number(baseCost);
+  if (!isFinite(n)) return NaN;
+  return round2(n * CLIENT_MARKUP_FACTOR);
+}
+
+// Nasconde controlli "Ricarico/Margine" se presenti (UI interna riusata)
+function hideMarkupControls(){
+  const ids = ["markupMode","markupPct","outClientPrice"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      const wrap = el.closest(".row") || el.closest(".field") || el.parentElement;
+      // nascondi wrapper se sensato, altrimenti solo elemento
+      if (wrap && wrap !== document.body) wrap.style.display = "none";
+      else el.style.display = "none";
+    }
+  });
+  // nascondi testo di hint se esiste vicino ai controlli
+  document.querySelectorAll(".hint").forEach(h => {
+    if (h.textContent && (h.textContent.includes("Ricarico%") || h.textContent.includes("Margine%"))) {
+      h.style.display = "none";
+    }
+  });
+}
+
+// Aggiorna il valore mostrato (solo prezzo cliente)
+function updateDisplayedCostFromLast(){
+  if(!UI.outCost) return NaN;
+  if(LAST_COST == null || !isFinite(Number(LAST_COST))){
+    UI.outCost.textContent = "—";
+    return NaN;
   }
-  if(m === 'MARGINE'){
-    if(p >= 1) return null;
-    return cost / (1 - p);
-  }
-  // fallback: ricarico
-  return cost * (1 + p);
-}
-
-function updateClientPriceDisplay(){
-  if(!UI.outPrice) return;
-  const baseCost = Number(UI.outCost?.dataset?.basecost||0);
-  const client = computeClientPrice(baseCost, "RICARICO", USE_FRIENDLY_FIXED_MARKUP_PCT);
-  UI.outPrice.textContent = moneyEUR(client);
-  // hide controls if present
-  if(UI.markupMode) UI.markupMode.value = "RICARICO";
-  if(UI.markupPct) UI.markupPct.value = String(USE_FRIENDLY_FIXED_MARKUP_PCT);
+  const client = clientPriceFromBase(LAST_COST);
+  UI.outCost.textContent = formatEuro(client);
+  return client;
 }
 
 
-/* -------------------- SHARE (WhatsApp + TXT) -------------------- */
-/*
-  Obiettivo: inviare un report "client-ready" con:
-  - Servizio / Destinazione / Carico (se groupage multi-carico) / Opzioni / Note extra (se presenti)
-  - Totale: PREZZO CLIENTE (già calcolato) — senza citare ricarico/margine
-*/
 
-function enableShareButtons(enabled){
-  if(UI.btnShare) UI.btnShare.disabled = !enabled;
-  if(UI.btnShareWA) UI.btnShareWA.disabled = !enabled;
-  if(UI.btnExportTxt) UI.btnExportTxt.disabled = !enabled;
-}
 
 function buildClientReadyReport(){
-  const clientPrice = (UI.outClientPrice?.textContent || "").trim();
+  const price = (UI.outCost?.textContent || "").trim();
   const raw = (UI.outText?.textContent || "").trim();
 
-  if(!raw || raw === "Carica dati…" || !clientPrice || clientPrice === "—") return "";
+  if(!raw || raw === "Carica dati…" || !price || price === "—") return "";
 
-  const lines = raw.split("\n").map(s => s.trim()).filter(Boolean);
+  // pulizia: togli eventuali righe interne tipo "TOTALE:"
+  const lines = raw.split("\n")
+    .map(s => s.trim())
+    .filter(Boolean)
+    .filter(ln => !/^COSTO\s+STIMATO:/i.test(ln))
+    .filter(ln => !/^PREZZO\s+CLIENTE:/i.test(ln))
+    .filter(ln => !/^TOTALE:/i.test(ln));
 
   const out = [];
   out.push("*TRASPORTO — STIMA*");
-
-  for(const ln of lines){
-    const up = ln.toUpperCase();
-
-    if(up.startsWith("REGOLE:")) continue;
-    if(up.startsWith("ATTENZIONE:")) continue;
-    if(up.startsWith("COSTO STIMATO:")) continue;
-
-    if(up.includes("PROVINCIA") && up.includes("TARIFFATA")) continue;
-    if(up.startsWith("NOTA:")) continue;
-    if(up.startsWith("NOTA / CONTROLLO")) continue;
-
-    if(up.startsWith("SERVIZIO:")){
-      out.push(`Servizio: ${ln.split(":").slice(1).join(":").trim()}`);
-      continue;
-    }
-    if(up.startsWith("DESTINAZIONE:")){
-      out.push(`Destinazione: ${ln.split(":").slice(1).join(":").trim()}`);
-      continue;
-    }
-    if(up.startsWith("CARICO:")){
-      out.push(`Carico: ${ln.split(":").slice(1).join(":").trim()}`);
-      continue;
-    }
-
-    if(ln.startsWith("-")){
-      let s = ln.replace(/^\-\s*/, "• ");
-      s = s.replace(/\s*\[stack\]\s*/ig, "");
-      s = s.replace(/\s*\[BASE\]\s*/ig, " (Base)");
-      s = s.replace(/\s+/g, " ").trim();
-      out.push(s);
-      continue;
-    }
-
-    if(up.startsWith("GROUPAGE:")){
-      const rest = ln.split(":").slice(1).join(":").trim();
-      out.push(`Dati: ${rest}`);
-      continue;
-    }
-
-    if(up.startsWith("OPZIONI:")){
-      const rest = ln.split(":").slice(1).join(":").trim();
-      out.push(`Opzioni: ${rest || "nessuna"}`);
-      continue;
-    }
-
-    out.push(ln);
-  }
-
+  out.push(...lines);
   out.push("");
-  out.push(`*TOTALE: ${clientPrice}*`);
+  out.push(`TOTALE: ${price}`);
 
-  return out.slice(0, 40).join("\n").trim();
+  return out.join("\n");
 }
+
 
 
 function shareViaWhatsApp(text){
@@ -560,9 +518,8 @@ function wireShareButtons(){
 function show(el, yes){ if(el) el.style.display = yes ? "" : "none"; }
 
 async function loadJSON(path){
-  const url = (path.includes("?") ? path + "&" : path + "?") + "v=" + encodeURIComponent(DATA_VERSION);
-  const r = await fetch(url, { cache: "no-store" });
-if(!r.ok) throw new Error(`Impossibile caricare ${path}`);
+  const r = await fetch(path, { cache: "no-store" });
+  if(!r.ok) throw new Error(`Impossibile caricare ${path}`);
   return r.json();
 }
 
@@ -1086,7 +1043,7 @@ function buildSummary({service, region, province, art, qty, palletType, lm, quin
   if(extraNote?.trim()) lines.push(`NOTE EXTRA: ${extraNote.trim()}`);
 
   lines.push("");
-  lines.push(`COSTO STIMATO: ${moneyEUR(cost)}`);
+  lines.push(`TOTALE: ${moneyEUR(cost)}`);
   if(rules?.length) lines.push(`REGOLE: ${rules.join(" | ")}`);
 
   if(alerts?.length){
@@ -1224,7 +1181,7 @@ function onCalc(){
     palletType,
     lm: __lm, quintali, palletCount,
     opts: __opts,
-    cost: out.cost,
+    cost: (Number.isFinite(out.cost) ? clientPriceFromBase(out.cost) : out.cost),
     rules: out.rules || [],
     alerts: out.alerts || [],
     extraNote: UI.extraNote.value || "",
@@ -1232,10 +1189,9 @@ function onCalc(){
   });
 
   UI.outText.textContent = summary;
-  UI.outCost.textContent = moneyEUR(out.cost);
-  // Salvo ultimo costo e aggiorno prezzo cliente in tempo reale
+  // Salvo costo interno (non mostrato) e mostro direttamente il prezzo cliente
   LAST_COST = (out && Number.isFinite(out.cost)) ? out.cost : null;
-  const __clientPrice = updateClientPriceDisplay();
+  const __clientPrice = updateDisplayedCostFromLast();
   // Abilita share solo se esiste un report client-ready valido
   enableShareButtons(!!(__clientPrice && buildClientReadyReport()));
 
@@ -1341,7 +1297,7 @@ async function init(){
     ensureGroupageCartUI();
     // reset costo/cliente quando cambio servizio
     LAST_COST = null;
-    updateClientPriceDisplay();
+    updateDisplayedCostFromLast();
     triggerLiveRecalc();
   });
   UI.q.addEventListener("input", () => renderArticleList(UI.q.value));
@@ -1350,9 +1306,9 @@ async function init(){
   UI.btnCopy.addEventListener("click", onCopy);
 
   // Prezzo cliente: aggiornamento immediato al cambio modalità/% (senza ricalcolare il costo)
-  if(UI.markupMode) UI.markupMode.addEventListener('change', () => updateClientPriceDisplay());
-  if(UI.markupPct)  UI.markupPct.addEventListener('input',  () => updateClientPriceDisplay());
-  if(UI.markupPct)  UI.markupPct.addEventListener('change', () => updateClientPriceDisplay());
+  if(UI.markupMode) UI.markupMode.addEventListener('change', () => updateDisplayedCostFromLast());
+  if(UI.markupPct)  UI.markupPct.addEventListener('input',  () => updateDisplayedCostFromLast());
+  if(UI.markupPct)  UI.markupPct.addEventListener('change', () => updateDisplayedCostFromLast());
 
   // Flag/opzioni: ricalcolo costo + prezzo cliente in tempo reale
   const flagEls = [UI.optPreavviso, UI.optAssicurazione, UI.optSponda, UI.chkZona, UI.distKm, UI.qty, UI.palletType, UI.region, UI.province, UI.article, UI.search];
