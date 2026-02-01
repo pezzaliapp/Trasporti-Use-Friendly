@@ -1,6 +1,6 @@
 // trasporti-pwa — Service Worker
 // iOS-safe update strategy: precache with cache-bust + robust network-first for app shell
-const CACHE = "trasporti-use-friendly-v1"; // bump on deploy // <-- bump ad ogni release reale
+const CACHE = "trasporti-use-friendly-v3"; // bump version when assets change
 
 const ASSETS = [
   "./",
@@ -108,46 +108,37 @@ self.addEventListener("message", (event) => {
 });
 
 // ---------- Fetch ----------
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  const url = new URL(req.url);
+self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
 
-  // Solo same-origin
+  // Only handle same-origin
   if (url.origin !== self.location.origin) return;
-
-  // Navigations (molto importante su iOS)
-  if (req.mode === "navigate") {
-    event.respondWith(networkFirst(new Request("./index.html")));
-    return;
-  }
 
   const path = url.pathname;
 
-  // App shell: sempre network-first
   const isAppShell =
     path.endsWith("/index.html") ||
     path.endsWith("/app.js") ||
     path.endsWith("/styles.css") ||
+    path.endsWith("/manifest.json") ||
+    path.endsWith("/sw.js") ||
     path === "/" ||
     path.endsWith("/");
 
-  if (isAppShell) {
-    event.respondWith(networkFirst(req));
+  const isData =
+    path.includes("/data/") &&
+    (path.endsWith(".json") || path.endsWith(".csv"));
+
+  // Make sure icons/manifest stay fresh too
+  const isMeta =
+    path.includes("/icons/") ||
+    path.endsWith("/manifest.json");
+
+  if (isAppShell || isData || isMeta) {
+    e.respondWith(networkFirst(e.request));
     return;
   }
 
-  // Dati critici: articles.json deve aggiornarsi subito (relazioni/force PALLET)
-  if (path.endsWith("/data/articles.json")) {
-    event.respondWith(networkFirst(req));
-    return;
-  }
-
-  // Altri JSON: stale-while-revalidate (veloce + si aggiorna in background)
-  if (path.endsWith(".json")) {
-    event.respondWith(staleWhileRevalidate(req));
-    return;
-  }
-
-  // Tutto il resto: cache-first
-  event.respondWith(cacheFirst(req));
+  // Everything else: cache-first
+  e.respondWith(cacheFirst(e.request));
 });
