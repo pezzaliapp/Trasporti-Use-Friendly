@@ -1,6 +1,6 @@
 // trasporti-pwa — Service Worker
 // iOS-safe update strategy: precache with cache-bust + robust network-first for app shell
-const CACHE = "trasporti-use-friendly-v2"; // <-- bump ad ogni release reale
+const CACHE = "trasporti-use-friendly-v1"; // bump on deploy // <-- bump ad ogni release reale
 
 const ASSETS = [
   "./",
