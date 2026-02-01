@@ -1250,7 +1250,7 @@ async function onCopy(){
 
 /* -------------------- INIT -------------------- */
 
-async function init(){
+async async function init(){
   // PWA
   if ("serviceWorker" in navigator){
     try{

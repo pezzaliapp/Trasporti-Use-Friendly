@@ -1,8 +1,6 @@
-// Trasporti Use Friendly — Service Worker
+// trasporti-pwa — Service Worker
 // iOS-safe update strategy: precache with cache-bust + robust network-first for app shell
-// Bump CACHE on every release that changes any asset or data file.
-
-const CACHE = "trasporti-use-friendly-v1"; // <-- bump ad ogni release reale
+const CACHE = "trasporti-use-friendly-v2"; // <-- bump ad ogni release reale
 
 const ASSETS = [
   "./",
@@ -10,13 +8,14 @@ const ASSETS = [
   "./styles.css",
   "./app.js",
   "./manifest.json",
-  "./sw.js",
 
   // Data
   "./data/articles.json",
   "./data/pallet_rates_by_region.json",
   "./data/groupage_rates.json",
   "./data/geo_provinces.json",
+  "./data/geo_provinces.csv",
+  "./data/template_articles.csv",
 
   // Icons
   "./icons/icon-192.png",
@@ -31,7 +30,7 @@ async function putInCache(request, response) {
 
 async function networkFirst(request) {
   try {
-    // cache: "no-store" helps; "reload" is handled by precacheAll() during install (useful on iOS).
+    // cache: "no-store" aiuta, ma su iOS è utile anche "reload" in alcuni casi
     const fresh = await fetch(request, { cache: "no-store" });
     await putInCache(request, fresh.clone());
     return fresh;
@@ -43,10 +42,9 @@ async function networkFirst(request) {
 
 async function staleWhileRevalidate(request) {
   const cached = await caches.match(request, { ignoreSearch: true });
-
   const fetchPromise = fetch(request)
     .then(async (fresh) => {
-      if (fresh && fresh.ok) await putInCache(request, fresh.clone());
+      await putInCache(request, fresh.clone());
       return fresh;
     })
     .catch(() => null);
@@ -59,21 +57,22 @@ async function cacheFirst(request) {
   if (cached) return cached;
 
   const fresh = await fetch(request);
-  if (fresh && fresh.ok) await putInCache(request, fresh.clone());
+  await putInCache(request, fresh.clone());
   return fresh;
 }
 
-// Precache “hard” to avoid Safari/iOS cached responses
+// Precache “hard” per evitare cache Safari/iOS
 async function precacheAll() {
   const cache = await caches.open(CACHE);
 
+  // Fetch one-by-one con cache:"reload" per forzare rete (molto utile su iOS)
   for (const url of ASSETS) {
     const req = new Request(url, { cache: "reload" });
     try {
       const res = await fetch(req);
-      if (res && res.ok) await cache.put(req, res);
+      if (res.ok) await cache.put(req, res);
     } catch (e) {
-      // If offline during install, don't fail the install—previous cache will cover.
+      // se offline durante install, non blocchiamo: la cache precedente coprirà
     }
   }
 }
@@ -93,7 +92,7 @@ self.addEventListener("activate", (event) => {
 
     await self.clients.claim();
 
-    // Notify clients that a new SW is active
+    // Notifica per far ricaricare UI (index.html già gestisce controllerchange)
     const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of clients) {
       client.postMessage({ type: "SW_UPDATED", cache: CACHE });
@@ -101,7 +100,7 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-// Allows page to force activate waiting SW (optional)
+// Permette “aggiorna ora” da pagina se vuoi in futuro (postMessage SKIP_WAITING)
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
@@ -113,10 +112,10 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // same-origin only
+  // Solo same-origin
   if (url.origin !== self.location.origin) return;
 
-  // Navigations (important on iOS PWA)
+  // Navigations (molto importante su iOS)
   if (req.mode === "navigate") {
     event.respondWith(networkFirst(new Request("./index.html")));
     return;
@@ -124,13 +123,11 @@ self.addEventListener("fetch", (event) => {
 
   const path = url.pathname;
 
-  // App shell: always network-first
+  // App shell: sempre network-first
   const isAppShell =
     path.endsWith("/index.html") ||
     path.endsWith("/app.js") ||
     path.endsWith("/styles.css") ||
-    path.endsWith("/manifest.json") ||
-    path.endsWith("/sw.js") ||
     path === "/" ||
     path.endsWith("/");
 
@@ -139,22 +136,18 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Critical datasets: always network-first (rule changes must propagate)
-  if (
-    path.endsWith("/data/articles.json") ||
-    path.endsWith("/data/pallet_rates_by_region.json") ||
-    path.endsWith("/data/groupage_rates.json")
-  ) {
+  // Dati critici: articles.json deve aggiornarsi subito (relazioni/force PALLET)
+  if (path.endsWith("/data/articles.json")) {
     event.respondWith(networkFirst(req));
     return;
   }
 
-  // Other JSON: stale-while-revalidate
+  // Altri JSON: stale-while-revalidate (veloce + si aggiorna in background)
   if (path.endsWith(".json")) {
     event.respondWith(staleWhileRevalidate(req));
     return;
   }
 
-  // Everything else
+  // Tutto il resto: cache-first
   event.respondWith(cacheFirst(req));
 });
