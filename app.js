@@ -304,9 +304,25 @@ function onArticleChange(){
     }
   }
 
-  // ✅ forza servizio PALLET se stai su GLS o se service è vuoto
+    // ✅ auto-selezione servizio in base a direttive esplicite dell’articolo
+  // - Se note/regole contengono GROUPAGE (o LM), forza GROUPAGE.
+  // - Altrimenti: se service è vuoto/GLS, default PALLET.
   if(UI.service){
-    if(!UI.service.value || UI.service.value === "GLS"){
+    const r2 = art.rules || {};
+    const noteText = [
+      art.note, art.notes, art.nota,
+      (art.pack && (art.pack.note || art.pack.notes || art.pack.nota))
+    ].filter(Boolean).join(" ").toUpperCase();
+
+    const wantsGroupage =
+      (r2.forceService === "GROUPAGE") ||
+      (typeof r2.groupageLm === "number") ||
+      (noteText.includes("GROUPAGE"));
+
+    if(wantsGroupage && UI.service.value !== "GROUPAGE"){
+      UI.service.value = "GROUPAGE";
+      applyServiceUI();
+    } else if(!UI.service.value || UI.service.value === "GLS"){
       UI.service.value = "PALLET";
       applyServiceUI();
     }
@@ -489,7 +505,7 @@ function buildSummary({service, region, province, art, qty, palletType, lm, quin
   if(extraNote?.trim()) lines.push(`NOTE EXTRA: ${extraNote.trim()}`);
 
   lines.push("");
-  lines.push(`COSTO STIMATO: ${moneyEUR(cost)}`);
+  lines.push(`TOTALE: ${moneyEUR(applyClientMarkup(cost))}`);
   if(rules?.length) lines.push(`REGOLE: ${rules.join(" | ")}`);
 
   if(alerts?.length){
@@ -677,7 +693,7 @@ async function init(){
   if(UI.markupPct)  UI.markupPct.addEventListener('change', () => updateClientPriceDisplay());
 
   // Flag/opzioni: ricalcolo costo + prezzo cliente in tempo reale
-  const flagEls = [UI.optPreavviso, UI.optAssicurazione, UI.optSponda, UI.chkZona, UI.distKm, UI.qty, UI.palletType, UI.region, UI.province, UI.article, UI.search];
+  const flagEls = [UI.service, UI.region, UI.province, UI.article, UI.q, UI.qty, UI.palletType, UI.lm, UI.quintali, UI.palletCount, UI.kmOver, UI.optDisagiata, UI.optPreavviso, UI.optAssicurazione, UI.optSponda, UI.extraNote];
   flagEls.forEach(el => {
     if(!el) return;
     el.addEventListener('input',  () => triggerLiveRecalc());
