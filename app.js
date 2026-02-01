@@ -371,15 +371,20 @@ function moneyEUR(v){
 let LAST_COST = null;
 
 function computeClientPrice(cost){
-  // Fixed client price: internal cost * 1.30
-  return round2((Number(cost)||0) * CLIENT_MARKUP);
+  const c = Number(cost);
+  if(!Number.isFinite(c) || c < 0) return null;
+  return c * CLIENT_MARKUP;
 }
 
 function updateClientPriceDisplay(cost){
   const client = computeClientPrice(cost);
-  if (UI.outClientPrice) UI.outClientPrice.textContent = fmtEUR(client);
-  // In client version we show only the client total as main output
-  if (UI.outCost) UI.outCost.textContent = fmtEUR(client);
+  // In client PWA we show ONLY the final total (already marked up)
+  if(UI.outCost){
+    UI.outCost.textContent = client == null ? "—" : moneyEUR(client);
+  }
+  // Hide optional "client price" field if present
+  if(UI.outClientPrice){ UI.outClientPrice.textContent = ""; }
+  return client;
 }
 
 /* -------------------- SHARE (WhatsApp + TXT) -------------------- */
@@ -411,7 +416,7 @@ function buildClientReadyReport(){
 
     if(up.startsWith("REGOLE:")) continue;
     if(up.startsWith("ATTENZIONE:")) continue;
-    if(up.startsWith("COSTO STIMATO:")) continue;
+    if(up.startsWith("TOTALE STIMATO:")) continue;
 
     if(up.includes("PROVINCIA") && up.includes("TARIFFATA")) continue;
     if(up.startsWith("NOTA:")) continue;
@@ -1091,8 +1096,8 @@ function findArticleByCode(code){
 function onCalc(){
   const service = UI.service.value;
 
-  const region = normalizeRegion(UI.region.value || UI.region.options?.[UI.region.selectedIndex]?.textContent || "");
-  const province = normalizeProvince(UI.province.value || UI.province.options?.[UI.province.selectedIndex]?.textContent || "");
+  const region = normalizeRegion(UI.region.value);
+  const province = normalizeProvince(UI.province.value);
 
   const qty = Math.max(1, parseInt(UI.qty.value || "1", 10));
   const palletType = (UI.palletType.value || "").trim();
@@ -1181,7 +1186,7 @@ function onCalc(){
     }
   }
 
-  if (UI.dbgArticle) UI.dbgArticle.textContent = art ? JSON.stringify({id:art.id, code:art.code, pack:art.pack || {}, rules: art.rules || {}}, null, 0) : "—";
+  UI.dbgArticle.textContent = art ? JSON.stringify({id:art.id, code:art.code, pack:art.pack || {}, rules: art.rules || {}}, null, 0) : "—";
 
   let out;
   if(__svc === "PALLET"){
@@ -1216,11 +1221,11 @@ function onCalc(){
   LAST_COST = (out && Number.isFinite(out.cost)) ? out.cost : null;
   const clientTotal = computeClientPrice(out.cost);
   UI.outCost.textContent = clientTotal ? moneyEUR(clientTotal) : "—";
-  updateClientPriceDisplay();
-  // Abilita share solo se esiste un report client-ready valido
+  updateClientPriceDisplay(out.cost);
+    // Abilita share solo se esiste un report client-ready valido
   enableShareButtons(!!(__clientPrice && buildClientReadyReport()));
 
-  if (UI.dbgRules) UI.dbgRules.textContent = (out.rules || []).join(", ") || "—";
+  UI.dbgRules.textContent = (out.rules || []).join(", ") || "—";
 
   UI.btnCopy.disabled = !summary;
   UI.btnCopy.dataset.copy = summary;
@@ -1322,7 +1327,7 @@ async function init(){
     ensureGroupageCartUI();
     // reset costo/cliente quando cambio servizio
     LAST_COST = null;
-    updateClientPriceDisplay();
+    updateClientPriceDisplay(out.cost);
     triggerLiveRecalc();
   });
   UI.q.addEventListener("input", () => renderArticleList(UI.q.value));
@@ -1364,7 +1369,7 @@ async function init(){
 
   applyServiceUI();
   UI.outText.textContent = "Pronto. Seleziona servizio, destinazione e articolo, poi Calcola.";
-  if (UI.dbgData) UI.dbgData.textContent = `articoli=${DB.articles.length} | regioni=${regions.length} | province=${(allProvincesFallback||[]).length}`;
+  UI.dbgData.textContent = `articoli=${DB.articles.length} | regioni=${regions.length} | province=${(allProvincesFallback||[]).length}`;
 }
 
 window.addEventListener("DOMContentLoaded", init);
