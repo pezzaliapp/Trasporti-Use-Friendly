@@ -44,10 +44,6 @@ const UI = {
   btnShare: $("btnShare"),
   btnShareWA: $("btnShareWA"),
   btnExportTxt: $("btnExportTxt"),
-  markupMode: $("markupMode"),
-  markupPct: $("markupPct"),
-  outClientPrice: $("outClientPrice"),
-
   outCost: $("outCost"),
   outText: $("outText"),
   outAlerts: $("outAlerts"),
@@ -367,26 +363,6 @@ function moneyEUR(v){
   return new Intl.NumberFormat("it-IT", { style:"currency", currency:"EUR" }).format(v);
 }
 
-// --- Prezzo cliente (Ricarico/Margine) ---
-let LAST_COST = null;
-
-function computeClientPrice(cost){
-  const c = Number(cost);
-  if(!Number.isFinite(c) || c < 0) return null;
-  return c * CLIENT_MARKUP;
-}
-
-function updateClientPriceDisplay(cost){
-  const client = computeClientPrice(cost);
-  // In client PWA we show ONLY the final total (already marked up)
-  if(UI.outCost){
-    UI.outCost.textContent = client == null ? "—" : moneyEUR(client);
-  }
-  // Hide optional "client price" field if present
-  if(UI.outClientPrice){ UI.outClientPrice.textContent = ""; }
-  return client;
-}
-
 /* -------------------- SHARE (WhatsApp + TXT) -------------------- */
 /*
   Obiettivo: inviare un report "client-ready" con:
@@ -401,7 +377,7 @@ function enableShareButtons(enabled){
 }
 
 function buildClientReadyReport(){
-  const clientPrice = (UI.outClientPrice?.textContent || "").trim();
+    const clientPrice = (UI.outCost?.textContent || "").trim();
   const raw = (UI.outText?.textContent || "").trim();
 
   if(!raw || raw === "Carica dati…" || !clientPrice || clientPrice === "—") return "";
@@ -416,7 +392,8 @@ function buildClientReadyReport(){
 
     if(up.startsWith("REGOLE:")) continue;
     if(up.startsWith("ATTENZIONE:")) continue;
-    if(up.startsWith("TOTALE STIMATO:")) continue;
+        if(up.startsWith("COSTO STIMATO:")) continue;
+    if(up.startsWith("COSTO PREVENTIVATO:")) continue;
 
     if(up.includes("PROVINCIA") && up.includes("TARIFFATA")) continue;
     if(up.startsWith("NOTA:")) continue;
@@ -1071,7 +1048,7 @@ function buildSummary({service, region, province, art, qty, palletType, lm, quin
   if(extraNote?.trim()) lines.push(`NOTE EXTRA: ${extraNote.trim()}`);
 
   lines.push("");
-  lines.push(`TOTALE STIMATO: ${moneyEUR(cost)}`);
+    lines.push(`COSTO PREVENTIVATO: ${moneyEUR(Number.isFinite(cost) ? round2(cost * 1.3) : null)}`);
   if(rules?.length) lines.push(`REGOLE: ${rules.join(" | ")}`);
 
   if(alerts?.length){
@@ -1209,7 +1186,7 @@ function onCalc(){
     palletType,
     lm: __lm, quintali, palletCount,
     opts: __opts,
-    cost: computeClientPrice(out.cost),
+    cost: out.cost,
     rules: out.rules || [],
     alerts: out.alerts || [],
     extraNote: UI.extraNote.value || "",
@@ -1217,13 +1194,10 @@ function onCalc(){
   });
 
   UI.outText.textContent = summary;
-  // Client-facing: show only the final (marked-up) total
-  LAST_COST = (out && Number.isFinite(out.cost)) ? out.cost : null;
-  const clientTotal = computeClientPrice(out.cost);
-  UI.outCost.textContent = clientTotal ? moneyEUR(clientTotal) : "—";
-  updateClientPriceDisplay(out.cost);
-    // Abilita share solo se esiste un report client-ready valido
-  enableShareButtons(!!(__clientPrice && buildClientReadyReport()));
+    // Mostra solo il costo preventivato (costo × 1,3)
+  UI.outCost.textContent = Number.isFinite(out.cost) ? moneyEUR(round2(out.cost * 1.3)) : "—";
+// Abilita share solo se esiste un report client-ready valido
+  enableShareButtons(!!buildClientReadyReport());
 
   UI.dbgRules.textContent = (out.rules || []).join(", ") || "—";
 
@@ -1325,22 +1299,13 @@ async function init(){
   UI.service.addEventListener("change", () => {
     applyServiceUI();
     ensureGroupageCartUI();
-    // reset costo/cliente quando cambio servizio
-    LAST_COST = null;
-    updateClientPriceDisplay(out.cost);
-    triggerLiveRecalc();
+triggerLiveRecalc();
   });
   UI.q.addEventListener("input", () => renderArticleList(UI.q.value));
   UI.article.addEventListener("change", onArticleChange);
   UI.btnCalc.addEventListener("click", onCalc);
   UI.btnCopy.addEventListener("click", onCopy);
-
-  // Prezzo cliente: aggiornamento immediato al cambio modalità/% (senza ricalcolare il costo)
-  if(UI.markupMode) UI.markupMode.addEventListener('change', () => updateClientPriceDisplay());
-  if(UI.markupPct)  UI.markupPct.addEventListener('input',  () => updateClientPriceDisplay());
-  if(UI.markupPct)  UI.markupPct.addEventListener('change', () => updateClientPriceDisplay());
-
-  // Flag/opzioni: ricalcolo costo + prezzo cliente in tempo reale
+// Flag/opzioni: ricalcolo costo + prezzo cliente in tempo reale
   const flagEls = [UI.optPreavviso, UI.optAssicurazione, UI.optSponda, UI.chkZona, UI.distKm, UI.qty, UI.palletType, UI.region, UI.province, UI.article, UI.search];
   flagEls.forEach(el => {
     if(!el) return;
