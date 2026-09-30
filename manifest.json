@@ -1,0 +1,6 @@
+{
+  "name": "Calcolo costi di trasporto",
+  "short_name": "Trasporti",
+  "start_url": "../calcolo-trasporti/",
+  "display": "standalone"
+}
